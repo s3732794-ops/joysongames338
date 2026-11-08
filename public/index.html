@@ -380,7 +380,15 @@ type: melee
     }
 
     function isSingleEmoji(str) {
-      return /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])$/vis.test(str.trim());
+      const clean = str.trim();
+      // Проверяем с помощью Segmenter (современный стандарт JS для работы с графемными кластерами)
+      if (window.Intl && Intl.Segmenter) {
+        const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
+        const segments = [...segmenter.segment(clean)];
+        return segments.length === 1;
+      }
+      // Запасной вариант, если старый браузер
+      return /^\p{Extended_Pictographic}/u.test(clean);
     }
 
     function submitCustomCharacter() {
