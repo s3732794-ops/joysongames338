@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Joyson Online Emoji Sandbox</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; user-select: none; touch-action: manipulation; }
+    body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #0f1115; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+
+    .modal { position: absolute; inset: 0; background: rgba(15,17,21,0.95); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px; overflow-y: auto; }
+    .hidden { display: none !important; }
+
+    .card { background: #1a1d24; border: 1px solid #2a2f3d; border-radius: 12px; padding: 20px; width: 100%; max-width: 440px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    h2, h3 { text-align: center; margin-top: 0; color: #4caf50; }
+
+    .btn { width: 100%; padding: 12px; margin: 6px 0; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; color: white; text-align: center; transition: 0.2s; }
+    .btn:active { transform: scale(0.98); }
+    .btn-dark-green { background: #1b5e20; }
+    .btn-green { background: #4caf50; }
+    .btn-yellow { background: #fbc02d; color: #111; }
+    .btn-blue { background: #0288d1; }
+    .btn-light-green { background: #7cb342; }
+    .btn-danger { background: #d32f2f; }
+
+    input, select { width: 100%; padding: 10px; margin: 6px 0; border-radius: 6px; background: #252934; border: 1px solid #3f4659; color: #fff; font-size: 14px; }
+    label { font-size: 12px; color: #aaa; margin-top: 6px; display: block; }
+    .hint { font-size: 11px; color: #888; text-align: center; margin-bottom: 8px; }
+
+    #game-container { position: relative; width: 100%; height: 100%; }
+    canvas { display: block; width: 100%; height: 100%; background: #15171c; }
+
+    #ui-hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10; }
+    .hud-badge { background: rgba(0,0,0,0.7); padding: 8px 14px; border-radius: 8px; font-size: 13px; color: #00ffcc; pointer-events: auto; }
+
+    .btn-pvp { pointer-events: auto; padding: 8px 16px; border-radius: 8px; font-weight: bold; border: none; cursor: pointer; font-size: 14px; }
+    .pvp-on { background: #2e7d32; color: white; }
+    .pvp-off { background: #c62828; color: white; }
+
+    .mobile-controls { position: absolute; bottom: 15px; left: 15px; right: 15px; display: flex; justify-content: space-between; align-items: flex-end; pointer-events: auto; }
+    #joystick-zone { width: 120px; height: 120px; background: rgba(255,255,255,0.1); border: 2px dashed rgba(255,255,255,0.3); border-radius: 50%; position: relative; touch-action: none; }
+    #joystick-stick { width: 44px; height: 44px; background: rgba(255,255,255,0.5); border-radius: 50%; position: absolute; top: 38px; left: 38px; pointer-events: none; }
+    .action-btns { display: flex; gap: 12px; }
+    .btn-act { width: 60px; height: 60px; border-radius: 50%; border: none; font-size: 24px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+
+  <!-- ГЛАВНОЕ МЕНЮ -->
+  <div id="main-menu" class="modal">
+    <div class="card">
+      <h2 id="player-display-name">Игрок ...</h2>
+      <div class="hint" id="account-status">Гостевой режим</div>
+
+      <label>Сменить имя пользователя:</label>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="username-input" placeholder="Введите ваш ник">
+        <button class="btn btn-blue" style="width: auto; padding: 0 15px;" onclick="changeUsername()">ОК</button>
+      </div>
+
+      <button class="btn btn-dark-green" onclick="quickSearch()">Найти игроков</button>
+      <button class="btn btn-green" onclick="openCharEditor()">Создать персонажа</button>
+      <button class="btn btn-yellow" onclick="openServerList()">Список серверов</button>
+      <button class="btn btn-blue" onclick="openAuthModal()">Регистрация (@gmail.com)</button>
+      <button class="btn btn-blue" onclick="document.getElementById('file-input').click()">Загрузить .joyson</button>
+      <button class="btn btn-light-green" onclick="openGuideModal()">Инструкция .joyson</button>
+
+      <input type="file" id="file-input" accept=".joyson,.txt" style="display:none" onchange="uploadJoysonFile(event)">
+      
+      <label>Выбор активного персонажа:</label>
+      <select id="character-select"></select>
+    </div>
+  </div>
+
+  <!-- РЕДАКТОР ПЕРСОНАЖА -->
+  <div id="char-editor-modal" class="modal hidden">
+    <div class="card">
+      <h2>Редактор Персонажа</h2>
+      
+      <label>Имя персонажа:</label>
+      <input type="text" id="ce-name" value="Мой Герой">
+
+      <label>Введите эмодзи персонажа (Только 1 эмодзи!):</label>
+      <input type="text" id="ce-emoji" placeholder="🤖">
+
+      <label>Scale персонажа (Макс. 2.5):</label>
+      <input type="number" id="ce-scale" value="1.0" min="0.2" max="2.5" step="0.1">
+
+      <label>Здоровье HP (Макс. 9999):</label>
+      <input type="number" id="ce-hp" value="1000" max="9999">
+
+      <label>Урон (Макс. 999):</label>
+      <input type="number" id="ce-damage" value="100" max="999">
+
+      <label>Скорость атаки (Макс. 2.0):</label>
+      <input type="number" id="ce-hitspd" value="0.5" max="2.0" step="0.1">
+
+      <label>Скорость перемещения (Макс. 5.0):</label>
+      <input type="number" id="ce-speed" value="2.0" max="5.0" step="0.1">
+
+      <label>Дальность атаки (Макс. 17):</label>
+      <input type="number" id="ce-range" value="1.5" max="17" step="0.5">
+
+      <label>Выберите тип атаки персонажа:</label>
+      <div style="display:flex; gap:15px; margin: 5px 0;">
+        <label><input type="radio" name="atk_type" value="melee" checked onchange="toggleRangedOptions(false)"> Ближняя</label>
+        <label><input type="radio" name="atk_type" value="ranged" onchange="toggleRangedOptions(true)"> Дальняя</label>
+      </div>
+      <div class="hint">дальняя / ближняя</div>
+
+      <div id="ranged-options" class="hidden">
+        <label>Тип дальнего боя:</label>
+        <div style="display:flex; gap:15px; margin: 5px 0;">
+          <label><input type="radio" name="rng_mode" value="tracer" checked onchange="toggleProjectileInputs(false)"> Жёлтый трассер</label>
+          <label><input type="radio" name="rng_mode" value="proj" onchange="toggleProjectileInputs(true)"> Снаряд</label>
+        </div>
+
+        <div id="proj-inputs" class="hidden">
+          <label>Эмодзи снаряда (1 эмодзи):</label>
+          <input type="text" id="ce-proj-emoji" placeholder="⚡">
+
+          <label>Скорость снаряда (Макс. 20.0):</label>
+          <input type="number" id="ce-proj-spd" value="10.0" max="20.0" step="0.5">
+
+          <label>Scale снаряда (Макс. 2.5):</label>
+          <input type="number" id="ce-proj-scale" value="0.5" max="2.5" step="0.1">
+        </div>
+      </div>
+
+      <button class="btn btn-blue" onclick="submitCustomCharacter()">Создать персонажа</button>
+      <button class="btn btn-danger" onclick="closeModal('char-editor-modal')">Отмена</button>
+    </div>
+  </div>
+
+  <!-- СПИСОК СЕРВЕРОВ -->
+  <div id="servers-modal" class="modal hidden">
+    <div class="card">
+      <h2>Список серверов</h2>
+      <button class="btn btn-blue" onclick="toggleCreateServerForm()">Создать сервер</button>
+
+      <div id="create-server-box" class="hidden" style="background:#222630; padding:10px; border-radius:8px; margin:10px 0;">
+        <input type="text" id="new-server-name" placeholder="Имя сервера (необязательно)">
+        <label>Игроков (2-50):</label>
+        <input type="number" id="new-server-limit" value="50" min="2" max="50">
+        <button class="btn btn-green" onclick="createNewServer()">Подтвердить создание</button>
+      </div>
+
+      <div id="server-list-container" style="max-height: 220px; overflow-y:auto; margin:10px 0; border:1px solid #333; border-radius:6px; padding:5px;"></div>
+      
+      <button class="btn btn-danger" onclick="closeModal('servers-modal')">Назад</button>
+    </div>
+  </div>
+
+  <!-- ОКНО АВТОРИЗАЦИИ ПО ПОЧТЕ -->
+  <div id="auth-modal" class="modal hidden">
+    <div class="card">
+      <h2>Регистрация по Email</h2>
+      <label>Введите электронную почту (обязательно с @gmail.com):</label>
+      <input type="email" id="auth-email" placeholder="например: s3732794@gmail.com">
+      <button class="btn btn-green" onclick="submitEmailAuth()">Войти и Сохранить</button>
+      <button class="btn btn-danger" onclick="closeModal('auth-modal')">Закрыть</button>
+    </div>
+  </div>
+
+  <!-- ИНСТРУКЦИЯ -->
+  <div id="guide-modal" class="modal hidden">
+    <div class="card">
+      <h2>Инструкция .joyson</h2>
+      <p style="font-size: 12px; color: #ccc;">Пример правильного блока:</p>
+      <pre style="background:#111; padding:10px; border-radius:6px; color:#00ffcc; font-size:11px; overflow-x:auto;">
+{character: builder
+name: 'Builder'
+emoji: '👷'
+hp: 1500
+damage: 80
+hit_spd: 0.5
+speed: 2.1
+range: 1.5
+type: melee
+}</pre>
+      <button class="btn btn-light-green" onclick="closeModal('guide-modal')">Понятно</button>
+    </div>
+  </div>
+
+  <!-- ИГРА -->
+  <div id="game-container">
+    <canvas id="canvas"></canvas>
+    <div id="ui-hud">
+      <div class="hud-badge" id="hud-stats">HP: 1000</div>
+      <button id="pvp-toggle-btn" class="btn-pvp pvp-on" onclick="togglePvP()">PvP: ON</button>
+      <button class="hud-badge" style="cursor:pointer;" onclick="leaveServer()">⚙️ В меню</button>
+    </div>
+    <div class="mobile-controls" id="mobile-ui">
+      <div id="joystick-zone"><div id="joystick-stick"></div></div>
+      <div class="action-btns">
+        <button class="btn-act" style="background:#2e7d32;" onclick="spawnBlock()">🟩</button>
+        <button class="btn-act" style="background:#c62828;" onclick="triggerAttack()">⚔️</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let reservedEmojis = [];
+    let characterList = [];
+    let selectedChar = null;
+
+    let pvpEnabled = true;
+    let player = { x: 0, y: 0, hp: 1000, maxHp: 1000, dirX: 1, dirY: 0, lastAttack: 0 };
+    let remotePlayers = {};
+    let blocks = [];
+    let projectiles = [];
+    let tracers = [];
+
+    const TILE_SIZE = 48;
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const isMobile = /Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (!isMobile) document.getElementById('mobile-ui').classList.add('hidden');
+
+    // Проверка сохраненной почты при перезаходе (сохранение только после регистрации)
+    const savedEmail = localStorage.getItem('joyson_user_email');
+    if (savedEmail) {
+      setTimeout(() => { socket.emit('auth_login', savedEmail); }, 300);
+    }
+
+    socket.on('init_player', (data) => {
+      if (!savedEmail) {
+        document.getElementById('player-display-name').innerText = data.username;
+        document.getElementById('username-input').value = data.username;
+      }
+      reservedEmojis = data.reservedEmojis;
+      loadDefaultJoyson();
+    });
+
+    socket.on('auth_success', (data) => {
+      document.getElementById('player-display-name').innerText = data.username;
+      document.getElementById('username-input').value = data.username;
+      document.getElementById('account-status').innerText = `Аккаунт: ${data.email}`;
+      closeModal('auth-modal');
+      if (data.customCharacters) {
+        data.customCharacters.forEach(c => addCharacterToList(c));
+      }
+    });
+
+    socket.on('username_updated', (newName) => {
+      document.getElementById('player-display-name').innerText = newName;
+    });
+
+    socket.on('auth_error', (msg) => alert(msg));
+    socket.on('char_error', (msg) => alert(msg));
+    socket.on('error_msg', (msg) => alert(msg));
+
+    socket.on('my_character_created', (charData) => {
+      addCharacterToList(charData);
+      reservedEmojis.push(charData.emoji);
+    });
+
+    socket.on('register_reserved_emoji', (emoji) => {
+      reservedEmojis.push(emoji);
+    });
+
+    socket.on('server_list', (servers) => {
+      const container = document.getElementById('server-list-container');
+      container.innerHTML = '';
+
+      if (servers.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding:15px; color:#aaa;">пока нет серверов</div>';
+        return;
+      }
+
+      servers.forEach(s => {
+        const item = document.createElement('div');
+        item.style.cssText = "display:flex; justify-content:space-between; align-items:center; padding:8px; border-bottom:1px solid #333;";
+        item.innerHTML = `<span><b>${s.name}</b> (${s.currentPlayers}/${s.maxPlayers})</span>
+          <button class="btn btn-green" style="width:auto; padding:4px 12px; margin:0;" onclick="joinServer('${s.id}')">Играть</button>`;
+        container.appendChild(item);
+      });
+    });
+
+    socket.on('joined_room_success', (data) => {
+      blocks = data.blocks || [];
+      remotePlayers = data.players || {};
+      delete remotePlayers[socket.id];
+      document.getElementById('main-menu').classList.add('hidden');
+      document.getElementById('servers-modal').classList.add('hidden');
+      resizeCanvas();
+      requestAnimationFrame(gameLoop);
+    });
+
+    socket.on('player_joined', (p) => { remotePlayers[p.id] = p; });
+    socket.on('player_left', (id) => { delete remotePlayers[id]; });
+    socket.on('player_moved', (data) => { if (remotePlayers[data.id]) Object.assign(remotePlayers[data.id], data); });
+    
+    socket.on('player_hp_sync', ({ id, hp }) => {
+      if (id === socket.id) player.hp = hp;
+      else if (remotePlayers[id]) remotePlayers[id].hp = hp;
+    });
+
+    // Мгновенный респавн на точке (0, 0) при смерти в PvP (0 HP)
+    socket.on('player_respawned', ({ id, hp, x, y }) => {
+      if (id === socket.id) {
+        player.hp = hp;
+        player.x = x;
+        player.y = y;
+      } else if (remotePlayers[id]) {
+        remotePlayers[id].hp = hp;
+        remotePlayers[id].x = x;
+        remotePlayers[id].y = y;
+      }
+    });
+
+    socket.on('block_spawned', (b) => blocks.push(b));
+    socket.on('sync_blocks', (bList) => blocks = bList);
+
+    function parseJoyson(text) {
+      const chars = [];
+      const cleaned = text.replace(/};\s*$/, '');
+      cleaned.split(/(?=\{character:)/g).forEach(b => {
+        if (!b.trim()) return;
+        const cObj = {};
+        b.split('\n').forEach(line => {
+          line = line.trim();
+          if (line.startsWith('{character:')) cObj.id = line.replace('{character:', '').trim();
+          else if (line.includes(':')) {
+            const idx = line.indexOf(':');
+            const k = line.slice(0, idx).trim();
+            let v = line.slice(idx + 1).trim();
+            if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) v = v.slice(1, -1);
+            else if (v === 'true') v = true; else if (v === 'false') v = false;
+            else if (!isNaN(Number(v))) v = Number(v);
+            cObj[k] = v;
+          }
+        });
+        if (cObj.name || cObj.id) chars.push(cObj);
+      });
+      return chars;
+    }
+
+    function loadDefaultJoyson() {
+      fetch('characters.joyson').then(r => r.text()).then(txt => {
+        parseJoyson(txt).forEach(c => addCharacterToList(c));
+      });
+    }
+
+    function uploadJoysonFile(e) {
+      const f = e.target.files[0];
+      if (!f) return;
+      const r = new FileReader();
+      r.onload = (evt) => {
+        parseJoyson(evt.target.result).forEach(c => addCharacterToList(c));
+        alert('Персонажи загружены из .joyson!');
+      };
+      r.readAsText(f);
+    }
+
+    function addCharacterToList(c) {
+      if (characterList.some(item => item.name === c.name && item.emoji === c.emoji)) return;
+      characterList.push(c);
+      const sel = document.getElementById('character-select');
+      const opt = document.createElement('option');
+      opt.value = characterList.length - 1;
+      opt.textContent = `${c.emoji || ''} ${c.name} (${c.type || 'melee'})`;
+      sel.appendChild(opt);
+    }
+
+    function changeUsername() {
+      const input = document.getElementById('username-input').value.trim();
+      if (input) socket.emit('change_username', input);
+    }
+
+    function submitEmailAuth() {
+      const email = document.getElementById('auth-email').value.trim();
+      if (!email.toLowerCase().endsWith('@gmail.com')) {
+        return alert('Ошибка! Нужно ввести настоящую почту с окончанием @gmail.com!');
+      }
+      localStorage.setItem('joyson_user_email', email);
+      socket.emit('auth_login', email);
+    }
+
+    function isSingleEmoji(str) {
+      return /^(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])$/vis.test(str.trim());
+    }
+
+    function submitCustomCharacter() {
+      const emojiInput = document.getElementById('ce-emoji').value.trim();
+      if (!isSingleEmoji(emojiInput)) return alert('Ошибка! В поле эмодзи можно вводить ТОЛЬКО один эмодзи.');
+      if (reservedEmojis.includes(emojiInput)) return alert('Персонаж с таким эмодзи уже существует!');
+
+      const isRanged = document.querySelector('input[name="atk_type"]:checked').value === 'ranged';
+      const isProj = isRanged && document.querySelector('input[name="rng_mode"]:checked').value === 'proj';
+      let projEmoji = '';
+
+      if (isProj) {
+        projEmoji = document.getElementById('ce-proj-emoji').value.trim();
+        if (!isSingleEmoji(projEmoji)) return alert('Эмодзи снаряда должно содержать ровно ОДИН эмодзи!');
+      }
+
+      const charObj = {
+        name: document.getElementById('ce-name').value.trim() || 'Герой',
+        emoji: emojiInput,
+        scale: Math.min(parseFloat(document.getElementById('ce-scale').value) || 1.0, 2.5),
+        hp: Math.min(parseInt(document.getElementById('ce-hp').value) || 1000, 9999),
+        damage: Math.min(parseInt(document.getElementById('ce-damage').value) || 100, 999),
+        hit_spd: Math.min(parseFloat(document.getElementById('ce-hitspd').value) || 0.5, 2.0),
+        speed: Math.min(parseFloat(document.getElementById('ce-speed').value) || 2.0, 5.0),
+        range: Math.min(parseFloat(document.getElementById('ce-range').value) || 1.5, 17.0),
+        type: isRanged ? 'ranged' : 'melee',
+        isYellowTracer: isRanged && !isProj,
+        projectile_emoji: projEmoji,
+        projectile_spd: isProj ? Math.min(parseFloat(document.getElementById('ce-proj-spd').value) || 10.0, 20.0) : 0,
+        projectile_scale: isProj ? Math.min(parseFloat(document.getElementById('ce-proj-scale').value) || 0.5, 2.5) : 1
+      };
+
+      socket.emit('create_character', charObj);
+      closeModal('char-editor-modal');
+    }
+
+    function togglePvP() {
+      pvpEnabled = !pvpEnabled;
+      const btn = document.getElementById('pvp-toggle-btn');
+      if (pvpEnabled) {
+        btn.innerText = 'PvP: ON';
+        btn.className = 'btn-pvp pvp-on';
+      } else {
+        btn.innerText = 'PvP: OFF';
+        btn.className = 'btn-pvp pvp-off';
+      }
+    }
+
+    function openCharEditor() { document.getElementById('char-editor-modal').classList.remove('hidden'); }
+    function openServerList() { socket.emit('get_servers'); document.getElementById('servers-modal').classList.remove('hidden'); }
+    function toggleCreateServerForm() { document.getElementById('create-server-box').classList.toggle('hidden'); }
+    function openAuthModal() { document.getElementById('auth-modal').classList.remove('hidden'); }
+    function openGuideModal() { document.getElementById('guide-modal').classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function toggleRangedOptions(show) { document.getElementById('ranged-options').classList.toggle('hidden', !show); }
+    function toggleProjectileInputs(show) { document.getElementById('proj-inputs').classList.toggle('hidden', !show); }
+
+    function quickSearch() { selectActiveCharacter(); socket.emit('quick_search'); }
+    function createNewServer() {
+      const name = document.getElementById('new-server-name').value;
+      const limit = document.getElementById('new-server-limit').value;
+      selectActiveCharacter();
+      socket.emit('create_room', { name, maxPlayers: limit });
+    }
+    function joinServer(id) { selectActiveCharacter(); socket.emit('join_room', id); }
+    function leaveServer() { location.reload(); }
+
+    function selectActiveCharacter() {
+      const idx = document.getElementById('character-select').value || 0;
+      selectedChar = characterList[idx] || characterList[0];
+      player.hp = selectedChar.hp || 1000;
+      player.maxHp = selectedChar.hp || 1000;
+    }
+
+    function spawnBlock() {
+      const bx = Math.round(player.x + player.dirX * 1.5);
+      const by = Math.round(player.y + player.dirY * 1.5);
+      socket.emit('spawn_block', { x: bx, y: by, hp: 1000, maxHp: 1000 });
+    }
+
+    function triggerAttack() {
+      const now = Date.now();
+      const cooldown = (selectedChar.hit_spd || 0.5) * 1000;
+      if (now - player.lastAttack < cooldown) return;
+      player.lastAttack = now;
+
+      if (selectedChar.type === 'ranged') {
+        if (selectedChar.isYellowTracer) {
+          const rng = selectedChar.range || 15;
+          tracers.push({ x1: player.x, y1: player.y, x2: player.x + player.dirX * rng, y2: player.y + player.dirY * rng, life: 1 });
+          checkHit(selectedChar.damage, rng);
+        } else {
+          projectiles.push({
+            x: player.x, y: player.y,
+            vx: player.dirX * (selectedChar.projectile_spd || 10) * 0.04,
+            vy: player.dirY * (selectedChar.projectile_spd || 10) * 0.04,
+            emoji: selectedChar.projectile_emoji || '💥',
+            scale: selectedChar.projectile_scale || 0.5,
+            damage: selectedChar.damage, range: selectedChar.range, startX: player.x, startY: player.y
+          });
+        }
+      } else {
+        checkHit(selectedChar.damage, selectedChar.range || 1.5);
+      }
+    }
+
+    function checkHit(damage, range) {
+      blocks.forEach((b, idx) => {
+        if (Math.hypot(b.x - player.x, b.y - player.y) <= range) {
+          socket.emit('block_damage', { blockIndex: idx, damage });
+        }
+      });
+      Object.values(remotePlayers).forEach(rp => {
+        if (rp.pvp && Math.hypot(rp.x - player.x, rp.y - player.y) <= range) {
+          socket.emit('deal_player_damage', { targetId: rp.id, damage });
+        }
+      });
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+    window.addEventListener('mousedown', (e) => {
+      if (document.getElementById('main-menu').classList.contains('hidden')) {
+        if (e.button === 0) triggerAttack();
+        if (e.button === 2) spawnBlock();
+      }
+    });
+    window.addEventListener('contextmenu', e => e.preventDefault());
+
+    const joyContainer = document.getElementById('joystick-zone');
+    const joyStick = document.getElementById('joystick-stick');
+    let joyVec = { x: 0, y: 0 };
+    if (joyContainer) {
+      joyContainer.addEventListener('touchstart', handleJoy);
+      joyContainer.addEventListener('touchmove', handleJoy);
+      joyContainer.addEventListener('touchend', () => { joyStick.style.transform = 'translate(0,0)'; joyVec = {x:0, y:0}; });
+    }
+
+    function handleJoy(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      const rect = joyContainer.getBoundingClientRect();
+      let dx = touch.clientX - (rect.left + rect.width / 2);
+      let dy = touch.clientY - (rect.top + rect.height / 2);
+      const maxR = rect.width / 2;
+      const len = Math.hypot(dx, dy);
+      if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
+      joyStick.style.transform = `translate(${dx}px, ${dy}px)`;
+      joyVec.x = dx / maxR; joyVec.y = dy / maxR;
+      if (Math.hypot(joyVec.x, joyVec.y) > 0.1) {
+        const l = Math.hypot(joyVec.x, joyVec.y);
+        player.dirX = joyVec.x / l; player.dirY = joyVec.y / l;
+      }
+    }
+
+    function update() {
+      let speed = (selectedChar ? selectedChar.speed : 2) * 0.045;
+      let moveX = joyVec.x, moveY = joyVec.y;
+
+      if (keys['KeyW'] || keys['ArrowUp']) moveY = -1;
+      if (keys['KeyS'] || keys['ArrowDown']) moveY = 1;
+      if (keys['KeyA'] || keys['ArrowLeft']) moveX = -1;
+      if (keys['KeyD'] || keys['ArrowRight']) moveX = 1;
+
+      if (moveX !== 0 || moveY !== 0) {
+        const len = Math.hypot(moveX, moveY);
+        player.dirX = moveX / len; player.dirY = moveY / len;
+        player.x += (moveX / len) * speed;
+        player.y += (moveY / len) * speed;
+        socket.emit('player_update', { x: player.x, y: player.y, dirX: player.dirX, dirY: player.dirY, char: selectedChar, pvp: pvpEnabled, hp: player.hp, maxHp: player.maxHp });
+      }
+
+      projectiles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        blocks.forEach((b, idx) => {
+          if (Math.hypot(b.x - p.x, b.y - p.y) < 0.6) {
+            socket.emit('block_damage', { blockIndex: idx, damage: p.damage });
+            p.dead = true;
+          }
+        });
+        Object.values(remotePlayers).forEach(rp => {
+          if (rp.pvp && Math.hypot(rp.x - p.x, rp.y - p.y) < 0.65) {
+            socket.emit('deal_player_damage', { targetId: rp.id, damage: p.damage });
+            p.dead = true;
+          }
+        });
+        if (Math.hypot(p.x - p.startX, p.y - p.startY) >= p.range) p.dead = true;
+      });
+      projectiles = projectiles.filter(p => !p.dead);
+      tracers.forEach(t => t.life -= 0.08);
+      tracers = tracers.filter(t => t.life > 0);
+      document.getElementById('hud-stats').innerText = `${selectedChar ? selectedChar.name : 'Игрок'} | HP: ${player.hp}`;
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const viewX = canvas.width / 2 - player.x * TILE_SIZE;
+      const viewY = canvas.height / 2 - player.y * TILE_SIZE;
+      ctx.save();
+      ctx.translate(viewX, viewY);
+
+      const startCol = Math.floor(player.x - canvas.width / (2 * TILE_SIZE) - 2);
+      const endCol = Math.ceil(player.x + canvas.width / (2 * TILE_SIZE) + 2);
+      const startRow = Math.floor(player.y - canvas.height / (2 * TILE_SIZE) - 2);
+      const endRow = Math.ceil(player.y + canvas.height / (2 * TILE_SIZE) + 2);
+
+      ctx.font = `${TILE_SIZE * 0.8}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+      for (let r = startRow; r <= endRow; r++) {
+        for (let c = startCol; c <= endCol; c++) {
+          ctx.fillText('🟩', c * TILE_SIZE, r * TILE_SIZE);
+        }
+      }
+
+      blocks.forEach(b => {
+        ctx.fillText('🟩', b.x * TILE_SIZE, b.y * TILE_SIZE);
+        ctx.fillStyle = 'red'; ctx.fillRect(b.x * TILE_SIZE - 18, b.y * TILE_SIZE - 25, 36, 4);
+        ctx.fillStyle = '#00ff00'; ctx.fillRect(b.x * TILE_SIZE - 18, b.y * TILE_SIZE - 25, 36 * (b.hp / b.maxHp), 4);
+      });
+
+      tracers.forEach(t => {
+        ctx.strokeStyle = `rgba(255, 235, 59, ${t.life})`;
+        ctx.lineWidth = 3; ctx.beginPath();
+        ctx.moveTo(t.x1 * TILE_SIZE, t.y1 * TILE_SIZE); ctx.lineTo(t.x2 * TILE_SIZE, t.y2 * TILE_SIZE);
+        ctx.stroke();
+      });
+
+      projectiles.forEach(p => {
+        ctx.font = `${TILE_SIZE * (p.scale || 0.5)}px serif`;
+        ctx.fillText(p.emoji, p.x * TILE_SIZE, p.y * TILE_SIZE);
+      });
+
+      Object.values(remotePlayers).forEach(rp => {
+        const char = rp.char || { emoji: '👨', scale: 1 };
+        ctx.font = `${TILE_SIZE * (char.scale || 1)}px serif`;
+        ctx.fillText(char.emoji || '👨', rp.x * TILE_SIZE, rp.y * TILE_SIZE);
+
+        ctx.font = '12px sans-serif'; ctx.fillStyle = '#fff';
+        ctx.fillText(rp.username || 'Игрок', rp.x * TILE_SIZE, rp.y * TILE_SIZE - 32);
+
+        const rpHp = rp.hp !== undefined ? rp.hp : 1000;
+        const rpMaxHp = rp.maxHp || 1000;
+        ctx.fillStyle = 'red'; ctx.fillRect(rp.x * TILE_SIZE - 20, rp.y * TILE_SIZE - 25, 40, 5);
+        ctx.fillStyle = '#00ff00'; ctx.fillRect(rp.x * TILE_SIZE - 20, rp.y * TILE_SIZE - 25, 40 * (rpHp / rpMaxHp), 5);
+      });
+
+      const pScale = selectedChar ? (selectedChar.scale || 1) : 1;
+      ctx.font = `${TILE_SIZE * pScale}px serif`;
+      ctx.fillText(selectedChar ? selectedChar.emoji : '👨', player.x * TILE_SIZE, player.y * TILE_SIZE);
+
+      ctx.font = '12px sans-serif'; ctx.fillStyle = '#00ffcc';
+      ctx.fillText(document.getElementById('player-display-name').innerText, player.x * TILE_SIZE, player.y * TILE_SIZE - 32);
+
+      ctx.fillStyle = 'red'; ctx.fillRect(player.x * TILE_SIZE - 20, player.y * TILE_SIZE - 25, 40, 5);
+      ctx.fillStyle = '#00ff00'; ctx.fillRect(player.x * TILE_SIZE - 20, player.y * TILE_SIZE - 25, 40 * (player.hp / player.maxHp), 5);
+
+      ctx.restore();
+    }
+
+    function gameLoop() {
+      update(); render();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.addEventListener('resize', resizeCanvas);
+  </script>
+</body>
+</html>
