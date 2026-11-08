@@ -1,0 +1,60 @@
+{character: builder
+name: 'Builder'
+emoji: '👷'
+hp: 1500
+damage: 80
+hit_spd: 0.5
+speed: 2.1
+range: 1.5
+type: melee
+}
+
+{character: shark
+name: 'Shark'
+emoji: '🦈'
+hp: 5000
+damage: 200
+hit_spd: 0.5
+speed: 2.5
+range: 1.5
+type: melee
+}
+
+{character: human
+name: 'Man'
+emoji: '🧑'
+hp: 1000
+damage: 100
+hit_spd: 0.5
+speed: 2.0
+range: 1.5
+type: melee
+}
+
+{character: rifle
+name: 'Rifle'
+emoji: '🔫'
+hp: 1000
+damage: 100
+hit_spd: 0.5
+speed: 2.0
+range: 15
+type: ranged
+isYellowTracer: true
+}
+
+{character: bow
+name: 'Bow'
+emoji: '🏹'
+hp: 1100
+damage: 120
+hit_spd: 0.5
+speed: 2.0
+range: 15
+type: ranged
+projectile_emoji: '🏹'
+projectile_spd: 10.1
+projectile_scale: 0.5
+}
+
+};
